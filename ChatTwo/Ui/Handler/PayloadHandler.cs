@@ -455,6 +455,21 @@ public sealed class PayloadHandler
         if (ImGui.Selectable(Language.Context_SearchForItem))
             GameFunctions.Context.SearchForItem(realItemId);
 
+        if (GameFunctions.Context.IsDailyRoutinesNpcShopModuleEnabled())
+        {
+            if (ImGui.Selectable(Language.Context_NpcShopSource))
+                GameFunctions.Context.SearchNpcShopSource(payload.ItemId);
+
+            if (ImGui.Selectable(Language.Context_NpcShopDestination))
+                GameFunctions.Context.SearchNpcShopDestination(payload.ItemId);
+        }
+
+        if (GameFunctions.Context.IsDailyRoutinesMarketBoardEnabled())
+        {
+            if (ImGui.Selectable(Language.Context_SearchMarketBoard))
+                GameFunctions.Context.SearchMarketBoard(itemRow.Name.ToString());
+        }
+
         if (ImGui.Selectable(Language.Context_Link))
             GameFunctions.Context.LinkItem(realItemId);
 

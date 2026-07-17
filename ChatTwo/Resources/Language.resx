@@ -670,6 +670,15 @@
     <data name="Context_SearchForItem">
         <value>Search for Item</value>
     </data>
+    <data name="Context_NpcShopSource">
+        <value>NPC Shop (Source)</value>
+    </data>
+    <data name="Context_NpcShopDestination">
+        <value>NPC Shop (Destination)</value>
+    </data>
+    <data name="Context_SearchMarketBoard">
+        <value>Search Market Board</value>
+    </data>
     <data name="Context_Link">
         <value>Link</value>
     </data>

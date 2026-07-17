@@ -671,6 +671,15 @@
   <data name="Context_SearchForItem">
     <value>檢視持有情況</value>
   </data>
+  <data name="Context_NpcShopSource">
+    <value>NPC商店[來源]</value>
+  </data>
+  <data name="Context_NpcShopDestination">
+    <value>NPC商店[去向]</value>
+  </data>
+  <data name="Context_SearchMarketBoard">
+    <value>市場板搜尋</value>
+  </data>
   <data name="Context_Link">
     <value>展示道具屬性</value>
   </data>
