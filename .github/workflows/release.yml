@@ -116,16 +116,23 @@ jobs:
           mkdir -p release
           # Copy the built plugin DLL
           cp ChatTwo/bin/Release/ChatTwo.dll release/
-          # Copy the plugin manifest
+          # Copy the generated plugin manifest (JSON, required by Dalamud)
+          cp ChatTwo/bin/Release/ChatTwo.json release/
+          # Copy the YAML source manifest for reference
           cp ChatTwo/ChatTwo.yaml release/
           # Copy any additional files needed at runtime
           if [ -f "ChatTwo/bin/Release/ChatTwo.pdb" ]; then
             cp ChatTwo/bin/Release/ChatTwo.pdb release/
           fi
-          # Create the plugin zip archive
+          # Copy the static emote list (required at runtime)
+          if [ -f "ChatTwo/bin/Release/SharedEmoteList.json" ]; then
+            cp ChatTwo/bin/Release/SharedEmoteList.json release/
+          fi
+          # Create the plugin zip archive (must include DLL + JSON manifest + runtime assets)
           cd ChatTwo/bin/Release
-          zip -r ${{ github.workspace }}/release/latest.zip ChatTwo.dll ChatTwo.pdb 2>/dev/null || \
-          zip -r ${{ github.workspace }}/release/latest.zip ChatTwo.dll
+          zip -r ${{ github.workspace }}/release/latest.zip ChatTwo.dll ChatTwo.json ChatTwo.pdb SharedEmoteList.json 2>/dev/null || \
+          zip -r ${{ github.workspace }}/release/latest.zip ChatTwo.dll ChatTwo.json 2>/dev/null || \
+          zip -r ${{ github.workspace }}/release/latest.zip ChatTwo.dll ChatTwo.json
           cd ${{ github.workspace }}
           ls -la release/
 
@@ -161,8 +168,10 @@ jobs:
 
             ### Installation Files
             - `latest.zip` - **Plugin archive for installation**
+            - `latest.zip` - **Plugin archive for installation** (includes DLL, JSON manifest, PDB, and runtime assets)
             - `ChatTwo.dll` - Plugin DLL
-            - `ChatTwo.yaml` - Plugin manifest
+            - `ChatTwo.json` - Plugin manifest (generated from YAML at build time)
+            - `ChatTwo.yaml` - Plugin manifest source
             - `*.sha256` - Checksums for verification
           files: |
             release/*
