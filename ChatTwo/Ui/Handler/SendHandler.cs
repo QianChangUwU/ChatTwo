@@ -75,8 +75,7 @@ public class SendHandler
                     }
 
                     var reason = target.Reason;
-                    var world = Sheets.WorldSheet.GetRow(target.World);
-                    if (world is { IsPublic: true })
+                    if (Sheets.WorldSheet.TryGetRow(target.World, out var world))
                     {
                         if (reason == TellReason.Reply && GameFunctions.GameFunctions.GetFriends().Any(friend => friend.ContentId == target.ContentId))
                             reason = TellReason.Friend;
@@ -85,6 +84,14 @@ public class SendHandler
                         AutoTranslate.ReplaceWithPayload(ref tellBytes);
 
                         Plugin.Functions.Chat.SendTell(reason, target.ContentId, target.Name, (ushort) world.RowId, tellBytes, trimmed);
+                    }
+                    else if (target.ContentId != 0)
+                    {
+                        // Fallback: if world data is unavailable, send via /tell command
+                        trimmed = $"/tell {target.Name} {trimmed}";
+                        var tellBytes = Encoding.UTF8.GetBytes(trimmed);
+                        AutoTranslate.ReplaceWithPayload(ref tellBytes);
+                        ChatBox.SendMessageUnsafe(tellBytes);
                     }
 
                     activeTab.CurrentChannel.ResetTempChannel();

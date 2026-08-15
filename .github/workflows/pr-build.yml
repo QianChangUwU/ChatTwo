@@ -1,0 +1,63 @@
+name: PR - Build Check
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - '**/*.md'
+      - '**/*.txt'
+      - 'docs/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Download and setup Dalamud
+        run: |
+          echo "Downloading Dalamud..."
+          wget -q https://goatcorp.github.io/dalamud-distrib/stg/latest.zip -O dalamud.zip
+          unzip -q dalamud.zip -d .dalamud
+          echo "DALAMUD_HOME=$PWD/.dalamud/" >> $GITHUB_ENV
+
+      - name: Restore NuGet packages
+        run: dotnet restore ChatTwo.sln /p:Configuration=Release --packages .nuget
+
+      - name: Build Project
+        run: |
+          dotnet build ChatTwo/ChatTwo.csproj \
+            -c Release \
+            -p:DalamudLibPath=$DALAMUD_HOME \
+            --source $PWD/.nuget
+
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChatTwo-build
+          path: |
+            ChatTwo/bin/Release/ChatTwo.dll
+            ChatTwo/bin/Release/ChatTwo.pdb
+          if-no-files-found: warn

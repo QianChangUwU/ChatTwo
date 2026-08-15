@@ -1,0 +1,193 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**/*.md'
+      - '**/*.txt'
+      - 'docs/**'
+  workflow_dispatch:
+    inputs:
+      force_release:
+        description: 'Force create release even if tag exists'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  detect-version-change:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get-version.outputs.version }}
+      should-release: ${{ steps.check-release.outputs.should-release }}
+      tag-exists: ${{ steps.check-tag.outputs.exists }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from csproj
+        id: get-version
+        run: |
+          VERSION=$(grep -oP '<Version>\K[^<]+' ChatTwo/ChatTwo.csproj | head -1)
+          if [ -z "$VERSION" ]; then
+            echo "Error: Could not extract version from ChatTwo.csproj"
+            exit 1
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Detected version: $VERSION"
+
+      - name: Check if tag already exists
+        id: check-tag
+        run: |
+          TAG="v${{ steps.get-version.outputs.version }}"
+          if git ls-remote --tags origin | grep -q "refs/tags/$TAG$"; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Tag $TAG already exists"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Tag $TAG does not exist"
+          fi
+
+      - name: Determine if release should be created
+        id: check-release
+        run: |
+          FORCE_RELEASE="${{ github.event.inputs.force_release }}"
+          TAG_EXISTS="${{ steps.check-tag.outputs.exists }}"
+          if [ "$FORCE_RELEASE" = "true" ] || [ "$TAG_EXISTS" = "false" ]; then
+            echo "should-release=true" >> $GITHUB_OUTPUT
+            echo "Will create release"
+          else
+            echo "should-release=false" >> $GITHUB_OUTPUT
+            echo "Will not create release (tag exists and not forced)"
+          fi
+
+  build-and-release:
+    needs: detect-version-change
+    if: needs.detect-version-change.outputs.should-release == 'true'
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.detect-version-change.outputs.version }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Download and setup Dalamud
+        run: |
+          echo "Downloading Dalamud..."
+          wget -q https://goatcorp.github.io/dalamud-distrib/stg/latest.zip -O dalamud.zip
+          unzip -q dalamud.zip -d .dalamud
+          echo "DALAMUD_HOME=$PWD/.dalamud/" >> $GITHUB_ENV
+
+      - name: Restore NuGet packages
+        run: dotnet restore ChatTwo.sln /p:Configuration=Release --packages .nuget
+
+      - name: Build Project
+        run: |
+          dotnet build ChatTwo/ChatTwo.csproj \
+            -c Release \
+            -p:DalamudLibPath=$DALAMUD_HOME \
+            --source $PWD/.nuget
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p release
+          # Copy the built plugin DLL
+          cp ChatTwo/bin/Release/ChatTwo.dll release/
+          # Copy the plugin manifest
+          cp ChatTwo/ChatTwo.yaml release/
+          # Copy any additional files needed at runtime
+          if [ -f "ChatTwo/bin/Release/ChatTwo.pdb" ]; then
+            cp ChatTwo/bin/Release/ChatTwo.pdb release/
+          fi
+          # Create the plugin zip archive
+          cd ChatTwo/bin/Release
+          zip -r ${{ github.workspace }}/release/latest.zip ChatTwo.dll ChatTwo.pdb 2>/dev/null || \
+          zip -r ${{ github.workspace }}/release/latest.zip ChatTwo.dll
+          cd ${{ github.workspace }}
+          ls -la release/
+
+      - name: Generate checksums
+        run: |
+          cd release
+          for file in *; do
+            if [ -f "$file" ]; then
+              sha256sum "$file" > "$file.sha256"
+            fi
+          done
+
+      - name: Create and push tag
+        run: |
+          TAG="v${VERSION}"
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          if [ "${{ needs.detect-version-change.outputs.tag-exists }}" = "true" ]; then
+            echo "Deleting existing tag $TAG"
+            git tag -d $TAG || true
+            git push origin :refs/tags/$TAG || true
+          fi
+          git tag $TAG -m "Release version ${VERSION}"
+          git push origin $TAG
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: "Chat 2 v${{ env.VERSION }}"
+          body: |
+            ## Chat 2 v${{ env.VERSION }}
+
+            ### Installation Files
+            - `latest.zip` - **Plugin archive for installation**
+            - `ChatTwo.dll` - Plugin DLL
+            - `ChatTwo.yaml` - Plugin manifest
+            - `*.sha256` - Checksums for verification
+          files: |
+            release/*
+          draft: false
+          prerelease: false
+
+      - name: Checkout DalamudPlugins repo
+        uses: actions/checkout@v4
+        with:
+          repository: QianChangUwU/DalamudPlugins
+          token: ${{ secrets.PLUGIN_REPO_TOKEN }}
+          path: dalamud-plugins
+
+      - name: Update pluginmaster.json
+        run: |
+          python3 .github/update_pluginmaster.py \
+            dalamud-plugins \
+            "${{ env.VERSION }}" \
+            "${{ github.repository }}"
+
+      - name: Commit and push to DalamudPlugins
+        run: |
+          cd dalamud-plugins
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add pluginmaster.json
+          git commit -m "Update ChatTwo to v${VERSION}"
+          git push

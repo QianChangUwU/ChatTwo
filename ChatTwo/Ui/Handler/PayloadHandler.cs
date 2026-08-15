@@ -531,7 +531,8 @@ public sealed class PayloadHandler
             if (!Sheets.IsInForay())
             {
                 InputHandler.ChatInput = $"/tell {player.PlayerName}";
-                if (world.Value.IsPublic)
+                // Add @WorldName when the target is on a different world
+                if (world.IsValid && world.RowId != Plugin.PlayerState.HomeWorld.RowId)
                     InputHandler.ChatInput += $"@{world.Value.Name}";
 
                 InputHandler.ChatInput += " ";
