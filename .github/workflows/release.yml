@@ -114,27 +114,41 @@ jobs:
       - name: Prepare artifacts
         run: |
           mkdir -p release
-          # Copy the built plugin DLL
-          cp ChatTwo/bin/Release/ChatTwo.dll release/
-          # Copy the generated plugin manifest (JSON, required by Dalamud)
-          cp ChatTwo/bin/Release/ChatTwo.json release/
-          # Copy the YAML source manifest for reference
-          cp ChatTwo/ChatTwo.yaml release/
-          # Copy any additional files needed at runtime
-          if [ -f "ChatTwo/bin/Release/ChatTwo.pdb" ]; then
-            cp ChatTwo/bin/Release/ChatTwo.pdb release/
-          fi
-          # Copy the static emote list (required at runtime)
-          if [ -f "ChatTwo/bin/Release/SharedEmoteList.json" ]; then
-            cp ChatTwo/bin/Release/SharedEmoteList.json release/
-          fi
-          # Create the plugin zip archive (must include DLL + JSON manifest + runtime assets)
-          cd ChatTwo/bin/Release
-          zip -r ${{ github.workspace }}/release/latest.zip ChatTwo.dll ChatTwo.json ChatTwo.pdb SharedEmoteList.json 2>/dev/null || \
-          zip -r ${{ github.workspace }}/release/latest.zip ChatTwo.dll ChatTwo.json 2>/dev/null || \
-          zip -r ${{ github.workspace }}/release/latest.zip ChatTwo.dll ChatTwo.json
+          BUILD_DIR="ChatTwo/bin/Release"
+
+          # ── Create the plugin zip from the entire build output ──────────────
+          # Dalamud requires the .json manifest alongside the .dll.
+          # The plugin also ships dependency DLLs, the Frontend web UI,
+          # language resource satellites, SharedEmoteList.json, and the
+          # SQLite native libraries for Windows.
+          #
+          # We exclude:
+          #   - Linux/macOS native runtimes (only win-x64 / win-x86 needed)
+          #   - .deps.json (Dalamud loads plugins via its own loader)
+          #   - the nested ChatTwo/ subfolder (Dalamud SDK build artifact)
+
+          cd "$BUILD_DIR"
+          zip -r -X ${{ github.workspace }}/release/latest.zip . \
+            -x "runtimes/linux-*" \
+            -x "runtimes/osx-*" \
+            -x "runtimes/maccatalyst-*" \
+            -x "runtimes/browser-*" \
+            -x "ChatTwo.deps.json" \
+            -x "ChatTwo/*" \
+            -x "*.sha256"
           cd ${{ github.workspace }}
-          ls -la release/
+
+          # ── Copy individual files for the GitHub Release assets list ─────────
+          cp "$BUILD_DIR/ChatTwo.dll" release/
+          cp "$BUILD_DIR/ChatTwo.json" release/
+          cp "$BUILD_DIR/ChatTwo.pdb" release/ 2>/dev/null || true
+          cp ChatTwo/ChatTwo.yaml release/
+
+          echo "=== release/ contents ==="
+          find release/ -type f | sort
+          echo ""
+          echo "=== latest.zip contents ==="
+          unzip -l release/latest.zip | head -60
 
       - name: Generate checksums
         run: |
@@ -167,9 +181,8 @@ jobs:
             ## Chat 2 v${{ env.VERSION }}
 
             ### Installation Files
-            - `latest.zip` - **Plugin archive for installation**
-            - `latest.zip` - **Plugin archive for installation** (includes DLL, JSON manifest, PDB, and runtime assets)
-            - `ChatTwo.dll` - Plugin DLL
+            - `latest.zip` - **Plugin archive for installation** (includes DLL, JSON manifest, dependency DLLs, Frontend web UI, language resources, SharedEmoteList.json, and Windows native SQLite libraries)
+            - `ChatTwo.dll` - Plugin DLL only
             - `ChatTwo.json` - Plugin manifest (generated from YAML at build time)
             - `ChatTwo.yaml` - Plugin manifest source
             - `*.sha256` - Checksums for verification
